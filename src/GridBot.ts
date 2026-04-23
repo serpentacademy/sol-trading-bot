@@ -76,10 +76,10 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
         let quoteUrl = '';
         if (tradeType === 'buy') {
             // BUY: Spend exact USDC for JitoSOL (ExactIn)
-            quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${USDC_MINT}&outputMint=${JITOSOL_MINT}&amount=${rawAmount}&slippageBps=50`;
+            quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${USDC_MINT}&outputMint=${JITOSOL_MINT}&amount=${rawAmount}&slippageBps=30`;
         } else {
             // SELL: Sell JitoSOL for exact USDC (ExactOut)
-            quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${JITOSOL_MINT}&outputMint=${USDC_MINT}&amount=${rawAmount}&slippageBps=50&swapMode=ExactOut`;
+            quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${JITOSOL_MINT}&outputMint=${USDC_MINT}&amount=${rawAmount}&slippageBps=30&swapMode=ExactOut`;
         }
 
         const quoteResponse = await (await fetch(quoteUrl)).json();
