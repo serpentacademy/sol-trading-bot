@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",                                  /* Change to a modern target */
+    "module": "NodeNext",                                /* Change to NodeNext */
+    "moduleResolution": "NodeNext",                      /* Change to NodeNext */
+    "esModuleInterop": true,                             /* Ensure this is true */
+    "forceConsistentCasingInFileNames": true,            /* Ensure this is true */
+    "strict": true,                                      /* Ensure this is true */
+    "skipLibCheck": true                                 /* Ensure this is true */
+  },
+  "ts-node": {
+    "esm": true
+  }
+}
