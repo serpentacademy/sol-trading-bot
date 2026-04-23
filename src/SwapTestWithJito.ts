@@ -23,7 +23,7 @@ const USDC_DECIMALS = 6;
 
 // Jito Configuration
 const JITO_BLOCK_ENGINE_URL = 'https://mainnet.block-engine.jito.wtf/api/v1/bundles';
-const JITO_TIP_AMOUNT = 30_000; // 0.00001 SOL (The smallest reliable tip)
+const JITO_TIP_AMOUNT = 200_000; // 0.00020 SOL (The smallest reliable tip)
 const JITO_TIP_ACCOUNTS = [
         "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
         "HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe",

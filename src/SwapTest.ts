@@ -130,10 +130,10 @@ async function main() {
     // Make sure to only uncomment one of these at a time for testing!
     
     // Swap 1 USDC in to get JitoSOL
-     await swapExactUsdcForJitoSol(1);
+     //await swapExactUsdcForJitoSol(1);
 
     // Swap JitoSOL out to get exactly 1 USDC
-     //await swapJitoSolForExactUsdc(1);
+     await swapJitoSolForExactUsdc(.5);
 }
 
 main();

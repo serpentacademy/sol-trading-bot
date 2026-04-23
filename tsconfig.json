@@ -6,7 +6,9 @@
     "esModuleInterop": true,                             /* Ensure this is true */
     "forceConsistentCasingInFileNames": true,            /* Ensure this is true */
     "strict": true,                                      /* Ensure this is true */
-    "skipLibCheck": true                                 /* Ensure this is true */
+    "skipLibCheck": true,
+    "types": ["node"]
+                                     /* Ensure this is true */
   },
   "ts-node": {
     "esm": true
