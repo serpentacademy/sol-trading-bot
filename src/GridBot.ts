@@ -38,7 +38,7 @@ const USDC_DECIMALS = 6;
 // Bot State & Locks
 const BOT_JSON_PATH = path.join(process.cwd(), 'Bot.json');
 const TRADES_DIR = path.join(process.cwd(), 'trades');
-const TRADE_SIZE_USDC = 1; // The exact USDC value to trade at each grid level
+const TRADE_SIZE_USDC = 3; // The exact USDC value to trade at each grid level
 let isTrading = false; // Mutex lock to prevent multiple trades from firing at the exact same millisecond
 
 // ==========================================
@@ -94,7 +94,7 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
                 userPublicKey: wallet.publicKey.toString(), 
                 wrapAndUnwrapSol: true,
                 dynamicComputeUnitLimit: true, // Auto-calculate exact CUs
-                prioritizationFeeLamports: 30000 // Fixed fee of 0.00001 SOL
+                prioritizationFeeLamports: 20000 // Fixed fee of 0.00001 SOL
             })
         })).json();
 
