@@ -72,20 +72,14 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
     const rawAmount = Math.floor(TRADE_SIZE_USDC * (10 ** USDC_DECIMALS));
 
     try {
-        // 1. Get Quote based on trade type
-        let quoteUrl = '';
-        if (tradeType === 'buy') {
-            // BUY: Spend exact USDC for JitoSOL (ExactIn)
-            quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${USDC_MINT}&outputMint=${JITOSOL_MINT}&amount=${rawAmount}&slippageBps=30`;
-        } else {
-            // SELL: Sell JitoSOL for exact USDC (ExactOut)
-            quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${JITOSOL_MINT}&outputMint=${USDC_MINT}&amount=${rawAmount}&slippageBps=30&swapMode=ExactOut`;
-        }
+        // 1. Get Quote
+        let quoteUrl = tradeType === 'buy' 
+            ? `https://api.jup.ag/swap/v1/quote?inputMint=${USDC_MINT}&outputMint=${JITOSOL_MINT}&amount=${rawAmount}&slippageBps=50`
+            : `https://api.jup.ag/swap/v1/quote?inputMint=${JITOSOL_MINT}&outputMint=${USDC_MINT}&amount=${rawAmount}&slippageBps=50&swapMode=ExactOut`;
 
         const quoteResponse = await (await fetch(quoteUrl)).json();
 
-        // 2. Request Optimized Transaction from Jupiter
-        console.log("Requesting optimized transaction with Priority Fees...");
+        // 2. Request Transaction
         const { swapTransaction } = await (await fetch('https://api.jup.ag/swap/v1/swap', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -93,46 +87,67 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
                 quoteResponse, 
                 userPublicKey: wallet.publicKey.toString(), 
                 wrapAndUnwrapSol: true,
-                dynamicComputeUnitLimit: true, // Auto-calculate exact CUs
-                prioritizationFeeLamports: 20000 // Fixed fee of 0.00001 SOL
+                dynamicComputeUnitLimit: true,
+                prioritizationFeeLamports: 12000 // Slightly higher for reliability
             })
         })).json();
 
-        // 3. Deserialize and Sign
-        const swapTransactionBuf = Buffer.from(swapTransaction, 'base64');
-        const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
+        const transaction = VersionedTransaction.deserialize(Buffer.from(swapTransaction, 'base64'));
         transaction.sign([wallet]);
 
-        // 4. Send to Solana Network
-        console.log("Sending transaction to the mempool...");
+        // 3. Send Transaction
         const txid = await connection.sendRawTransaction(transaction.serialize(), {
             skipPreflight: true,
             maxRetries: 2
         });
+        console.log(`📡 Transaction Sent: ${txid}. Waiting for confirmation...`);
 
-        // 5. Confirm Transaction
-        const latestBlockHash = await connection.getLatestBlockhash();
-        await connection.confirmTransaction({
-            blockhash: latestBlockHash.blockhash,
-            lastValidBlockHeight: latestBlockHash.lastValidBlockHeight,
-            signature: txid
-        });
+        // 4. Custom Polling Logic (The Fix)
+        const confirmed = await pollForSignature(txid);
 
-        console.log(`✅ Swap Successful! https://solscan.io/tx/${txid}`);
-
-        // 6. Update State & Save Receipt
-        let state = loadBotState();
-        state.last_trade_type = tradeType;
-        state.last_trade_price = currentPrice;
-        saveBotState(state);
-        saveTradeReceipt(txid, tradeType, currentPrice);
+        if (confirmed) {
+            console.log(`✅ Swap Successful! https://solscan.io/tx/${txid}`);
+            let state = loadBotState();
+            state.last_trade_type = tradeType;
+            state.last_trade_price = currentPrice;
+            saveBotState(state);
+            saveTradeReceipt(txid, tradeType, currentPrice);
+        } else {
+            console.error("❌ Transaction failed to confirm within 60 seconds.");
+        }
 
     } catch (error) {
         console.error("❌ Trade Execution Failed:", error);
     } finally {
-        // Always release the lock whether the trade succeeded or failed
         isTrading = false; 
     }
+}
+
+/**
+ * Manually polls the RPC for 60 seconds to check if a signature has landed.
+ */
+async function pollForSignature(signature: string): Promise<boolean> {
+    const start = Date.now();
+    const timeout = 60000; // 1 minute
+    const interval = 3000; // Poll every 3 seconds
+
+    while (Date.now() - start < timeout) {
+        const { value: status } = await connection.getSignatureStatus(signature);
+        
+        if (status) {
+            if (status.err) {
+                console.error("⚠️ Transaction landed but failed with error:", status.err);
+                return false;
+            }
+            if (status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized') {
+                return true;
+            }
+        }
+        
+        // Wait before next poll
+        await new Promise(resolve => setTimeout(resolve, interval));
+    }
+    return false;
 }
 
 // ==========================================
