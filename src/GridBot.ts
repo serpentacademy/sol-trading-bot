@@ -88,7 +88,7 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
                 userPublicKey: wallet.publicKey.toString(), 
                 wrapAndUnwrapSol: true,
                 dynamicComputeUnitLimit: true,
-                prioritizationFeeLamports: 12000 // Slightly higher for reliability
+                prioritizationFeeLamports: 17000 // Slightly higher for reliability
             })
         })).json();
 

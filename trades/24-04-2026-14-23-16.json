@@ -3,5 +3,11 @@
   "txid": "38oCjLn2AK9VGq6nviG6hDYJzPg7p4YvZm8NPGgkA4hpsKv88EYbT16UnhivV2iShFk6SSUzsgRc7sDXT3uuyHHb",
   "type": "buy",
   "price_usdc": 110.335152617149,
-  "size_usdc": 3
+  "size_usdc": 3,
+  "status": "success",
+  "fee_sol": 0.000055,
+  "actual_swapped_in": 3,
+  "actual_swapped_in_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  "actual_swapped_out": 0.027187130000000004,
+  "actual_swapped_out_mint": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn"
 }
