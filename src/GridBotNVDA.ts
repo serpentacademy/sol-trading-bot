@@ -29,6 +29,7 @@ const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const NVDAX_MINT = 'Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh'; // Replace with actual NVDAx mint
 const POOL_ADDRESS = new PublicKey('4KqQN6u1pFKroFE2jVEhoepAMRKPcuAzWVDCgm9zRBYN'); // Replace with actual Raydium Pool Address
 const USDC_DECIMALS = 6;
+const NVDAX_DECIMALS = 8; // Raydium layout showed mint0 has 8 decimals
 
 // Bot State & Locks
 const BOT_JSON_PATH = path.join(process.cwd(), 'BotNVDAx.json');
@@ -127,18 +128,36 @@ function saveTradeReceipt(txid: string, type: string, price: number) {
 // ==========================================
 // JUPITER EXECUTION (GRID)
 // ==========================================
+
 async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number) {
     console.log(`\n🚨 GRID TRIGGERED! Executing ${tradeType.toUpperCase()} at $${currentPrice.toFixed(4)}`);
-    const rawAmount = Math.floor(TRADE_SIZE_USDC * (10 ** USDC_DECIMALS));
+    
+    let quoteUrl = '';
+
+    if (tradeType === 'buy') {
+        // BUY: Spend exactly 3 USDC to get NVDAx
+        const rawAmountUsdc = Math.floor(TRADE_SIZE_USDC * (10 ** USDC_DECIMALS));
+        quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${USDC_MINT}&outputMint=${NVDAX_MINT}&amount=${rawAmountUsdc}&slippageBps=100`;
+    } else {
+        // SELL: Calculate how much NVDAx is equal to $3 at the current price, and sell that amount.
+        const nvdaxAmountToSell = TRADE_SIZE_USDC / currentPrice;
+        const rawAmountNvdax = Math.floor(nvdaxAmountToSell * (10 ** NVDAX_DECIMALS));
+        console.log(`Calculated Sell Amount: ${nvdaxAmountToSell.toFixed(6)} NVDAx`);
+        quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${NVDAX_MINT}&outputMint=${USDC_MINT}&amount=${rawAmountNvdax}&slippageBps=100`;
+    }
 
     try {
-        let quoteUrl = tradeType === 'buy' 
-            ? `https://api.jup.ag/swap/v1/quote?inputMint=${USDC_MINT}&outputMint=${NVDAX_MINT}&amount=${rawAmount}&slippageBps=50`
-            : `https://api.jup.ag/swap/v1/quote?inputMint=${NVDAX_MINT}&outputMint=${USDC_MINT}&amount=${rawAmount}&slippageBps=50&swapMode=ExactOut`;
+        // 1. Fetch Quote
+        const quoteRes = await fetch(quoteUrl);
+        const quoteResponse = await quoteRes.json();
 
-        const quoteResponse = await (await fetch(quoteUrl)).json();
+        if (quoteResponse.error) {
+            console.error(`❌ Jupiter Quote Failed: ${quoteResponse.error}`);
+            return; 
+        }
 
-        const { swapTransaction } = await (await fetch('https://api.jup.ag/swap/v1/swap', {
+        // 2. Fetch Swap Transaction
+        const swapRes = await fetch('https://api.jup.ag/swap/v1/swap', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -148,11 +167,19 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
                 dynamicComputeUnitLimit: true,
                 prioritizationFeeLamports: 17000 
             })
-        })).json();
+        });
+        const swapData = await swapRes.json();
 
-        const transaction = VersionedTransaction.deserialize(Buffer.from(swapTransaction, 'base64'));
+        if (swapData.error || !swapData.swapTransaction) {
+            console.error(`❌ Jupiter Swap Construction Failed:`, swapData.error || "Missing swapTransaction");
+            return; 
+        }
+
+        // 3. Deserialize and Sign
+        const transaction = VersionedTransaction.deserialize(Buffer.from(swapData.swapTransaction, 'base64'));
         transaction.sign([wallet]);
 
+        // 4. Send Transaction
         const txid = await connection.sendRawTransaction(transaction.serialize(), {
             skipPreflight: true,
             maxRetries: 2
@@ -174,7 +201,7 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
         }
 
     } catch (error) {
-        console.error("❌ Trade Execution Failed:", error);
+        console.error("❌ Trade Execution Exception:", error);
     } finally {
         isTrading = false; 
         try {
