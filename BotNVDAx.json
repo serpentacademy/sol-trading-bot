@@ -1,0 +1,12 @@
+{
+  "min_price": 190,
+  "max_price": 230,
+  "start_price": 212,
+  "grid_size": 1,
+  "block_trade": false,
+  "last_trade_type": "sell",
+  "last_trade_price": 212,
+  "start_token_quantity": 0.439155479,
+  "USDC_start_token_quantity": 20.233638,
+  "last_tx": ""
+}

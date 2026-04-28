@@ -4,8 +4,8 @@
   "start_price": 108.6,
   "grid_size": 0.39,
   "block_trade": false,
-  "last_trade_type": "buy",
-  "last_trade_price": 107.69705078928749,
+  "last_trade_type": "sell",
+  "last_trade_price": 106.66071010962727,
   "jitoSol_start_token_quantity": 0.439155479,
   "USDC_start_token_quantity": 20.233638,
   "last_tx": "3agLXxKD828aZMeB1KTo2cC55PkH2aRCEKPFyYHg3EVAf884ebJQ169yVQJJvZsPwYydPb5UzEbF7Fs1kT1G5Ckp"
