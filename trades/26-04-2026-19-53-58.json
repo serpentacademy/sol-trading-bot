@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-04-27T02:53:58.406Z",
+  "txid": "4i8igVv77nDdhB5gJ1xet25Zd4tehkicCjGM5HaveH1hi4AVtncgkQFpLFvgP4G3R9xUSnL2sdADpiW5HMbjfQgi",
+  "type": "sell",
+  "price_usdc": 112.07690955645596,
+  "size_usdc": 3,
+  "status": "success",
+  "fee_sol": 0.000022,
+  "actual_swapped_in": 0.026758631000000005,
+  "actual_swapped_in_mint": "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn",
+  "actual_swapped_out": 3,
+  "actual_swapped_out_mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+}

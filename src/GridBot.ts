@@ -5,7 +5,7 @@ import {
     ORCA_WHIRLPOOL_PROGRAM_ID, 
     PriceMath, 
     IGNORE_CACHE,
-    buildDefaultAccountFetcher // <--- Add this new import!
+    buildDefaultAccountFetcher
 } from '@orca-so/whirlpools-sdk';
 import { Wallet } from '@coral-xyz/anchor';
 import Decimal from 'decimal.js';
@@ -38,8 +38,8 @@ const USDC_DECIMALS = 6;
 // Bot State & Locks
 const BOT_JSON_PATH = path.join(process.cwd(), 'Bot.json');
 const TRADES_DIR = path.join(process.cwd(), 'trades');
-const TRADE_SIZE_USDC = 3; // The exact USDC value to trade at each grid level
-let isTrading = false; // Mutex lock to prevent multiple trades from firing at the exact same millisecond
+const TRADE_SIZE_USDC = 3; 
+let isTrading = false; // Memory Mutex
 
 // ==========================================
 // FILE I/O HELPERS
@@ -56,7 +56,6 @@ function saveTradeReceipt(txid: string, type: string, price: number) {
     if (!fs.existsSync(TRADES_DIR)) fs.mkdirSync(TRADES_DIR);
     
     const now = new Date();
-    // Format: DD-MM-YYYY-HH-MM-SS
     const filename = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}-${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}-${String(now.getSeconds()).padStart(2, '0')}.json`;
     
     const receipt = { timestamp: now.toISOString(), txid, type, price_usdc: price, size_usdc: TRADE_SIZE_USDC };
@@ -72,14 +71,12 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
     const rawAmount = Math.floor(TRADE_SIZE_USDC * (10 ** USDC_DECIMALS));
 
     try {
-        // 1. Get Quote
         let quoteUrl = tradeType === 'buy' 
             ? `https://api.jup.ag/swap/v1/quote?inputMint=${USDC_MINT}&outputMint=${JITOSOL_MINT}&amount=${rawAmount}&slippageBps=50`
             : `https://api.jup.ag/swap/v1/quote?inputMint=${JITOSOL_MINT}&outputMint=${USDC_MINT}&amount=${rawAmount}&slippageBps=50&swapMode=ExactOut`;
 
         const quoteResponse = await (await fetch(quoteUrl)).json();
 
-        // 2. Request Transaction
         const { swapTransaction } = await (await fetch('https://api.jup.ag/swap/v1/swap', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -88,21 +85,19 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
                 userPublicKey: wallet.publicKey.toString(), 
                 wrapAndUnwrapSol: true,
                 dynamicComputeUnitLimit: true,
-                prioritizationFeeLamports: 17000 // Slightly higher for reliability
+                prioritizationFeeLamports: 17000 
             })
         })).json();
 
         const transaction = VersionedTransaction.deserialize(Buffer.from(swapTransaction, 'base64'));
         transaction.sign([wallet]);
 
-        // 3. Send Transaction
         const txid = await connection.sendRawTransaction(transaction.serialize(), {
             skipPreflight: true,
             maxRetries: 2
         });
         console.log(`📡 Transaction Sent: ${txid}. Waiting for confirmation...`);
 
-        // 4. Custom Polling Logic (The Fix)
         const confirmed = await pollForSignature(txid);
 
         if (confirmed) {
@@ -110,6 +105,7 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
             let state = loadBotState();
             state.last_trade_type = tradeType;
             state.last_trade_price = currentPrice;
+            // Note: We do NOT release block_trade here, we do it safely in finally{}
             saveBotState(state);
             saveTradeReceipt(txid, tradeType, currentPrice);
         } else {
@@ -119,17 +115,23 @@ async function executeGridTrade(tradeType: 'buy' | 'sell', currentPrice: number)
     } catch (error) {
         console.error("❌ Trade Execution Failed:", error);
     } finally {
+        // Guarantee both the memory lock and file lock are released
         isTrading = false; 
+        try {
+            let state = loadBotState();
+            state.block_trade = false;
+            saveBotState(state);
+            console.log("🔓 Trade block released.");
+        } catch (fileErr) {
+            console.error("Failed to release file lock:", fileErr);
+        }
     }
 }
 
-/**
- * Manually polls the RPC for 60 seconds to check if a signature has landed.
- */
 async function pollForSignature(signature: string): Promise<boolean> {
     const start = Date.now();
     const timeout = 60000; // 1 minute
-    const interval = 3000; // Poll every 3 seconds
+    const interval = 3000; 
 
     while (Date.now() - start < timeout) {
         const { value: status } = await connection.getSignatureStatus(signature);
@@ -143,8 +145,6 @@ async function pollForSignature(signature: string): Promise<boolean> {
                 return true;
             }
         }
-        
-        // Wait before next poll
         await new Promise(resolve => setTimeout(resolve, interval));
     }
     return false;
@@ -158,57 +158,64 @@ async function startGridBot() {
     console.log(`Wallet loaded: ${wallet.publicKey.toBase58()}`);
     console.log(`Grid configuration loaded from Bot.json.`);
     
-  
-
-       // 1. Setup the dummy wallet
-       const dummyWallet = new Wallet(Keypair.generate());
-       
-       // 2. Initialize the context 
-       const ctx = WhirlpoolContext.from(
-           connection,
-           dummyWallet, 
-            // Added this back!
-       );
-       const client = buildWhirlpoolClient(ctx);
-   
+    const dummyWallet = new Wallet(Keypair.generate());
+    const ctx = WhirlpoolContext.from(connection, dummyWallet);
+    const client = buildWhirlpoolClient(ctx);
 
     connection.onAccountChange(USDC_JITOSOL_WHIRLPOOL, async (accountInfo, context) => {
-        if (isTrading) return; // Skip checking if a trade is actively routing
-            console.log(`\n[Slot ${context.slot}] Trade detected!`);
+        // 1. Immediately engage memory lock BEFORE any async awaits
+        if (isTrading) return; 
+        isTrading = true; 
 
         try {
-            // Force bypass the cache to get the live data
+            // 2. Check hard file lock before wasting RPC calls
+            let state = loadBotState();
+            if (state.block_trade === true) {
+                isTrading = false;
+                return;
+            }
+
+            console.log(`\n[Slot ${context.slot}] Price shift detected...`);
+
             const pool = await client.getPool(USDC_JITOSOL_WHIRLPOOL, IGNORE_CACHE);
             const poolData = pool.getData();
             
-            // Calculate the USD value of JitoSOL
             const priceOfUsdcInJitoSol = PriceMath.sqrtPriceX64ToPrice(poolData.sqrtPrice, 6, 9);
             const currentPrice = new Decimal(1).div(priceOfUsdcInJitoSol).toNumber();
-            console.log("currentPrice: "+currentPrice)
-            let state = loadBotState();
+            console.log("currentPrice: " + currentPrice);
+            
+            // Reload state just in case it was edited externally during the fetch delay
+            state = loadBotState(); 
 
-            // Ignore prices outside our min/max bounds
-            if (currentPrice < state.min_price || currentPrice > state.max_price) return;
+            if (currentPrice < state.min_price || currentPrice > state.max_price) {
+                isTrading = false;
+                return;
+            }
 
             const priceDifference = currentPrice - state.last_trade_price;
-            console.log(priceDifference+" -> priceDifference")
-            // SELL Logic: Price went UP by the grid size
+            console.log(priceDifference + " -> priceDifference");
+
+            // 3. Grid Trigger Execution Check
             if (priceDifference >= state.grid_size) {
-                isTrading = true;
-                console.log("sell");
+                console.log("sell condition met");
+                state.block_trade = true; // Engage File Lock
+                saveBotState(state);
                 await executeGridTrade('sell', currentPrice);
             } 
-            // BUY Logic: Price went DOWN by the grid size
             else if (priceDifference <= -state.grid_size) {
-                isTrading = true;
-                console.log("buy");
-
+                console.log("buy condition met");
+                state.block_trade = true; // Engage File Lock
+                saveBotState(state);
                 await executeGridTrade('buy', currentPrice);
+            } 
+            else {
+                // If neither condition is met, safely release the memory lock
+                isTrading = false;
             }
 
         } catch (error) {
             console.error("Error evaluating grid conditions:", error);
-            isTrading = false; // Ensure lock releases if the price fetch fails
+            isTrading = false; 
         }
     }, 'confirmed');
 }
