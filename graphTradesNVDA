@@ -1,0 +1,178 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import json
+import glob
+import os
+import numpy as np
+
+# ==========================================
+# 1. LOAD CONFIG & PREP DATA
+# ==========================================
+def load_bot_config(filepath='BotNVDAx.json'):
+    try:
+        with open(filepath, 'r') as file:
+            return json.load(file)
+    except FileNotFoundError:
+        print(f"Warning: {filepath} not found. Using default starting balances of 0.")
+        return {"start_token_quantity": 0, "USDC_start_token_quantity": 0}
+
+def load_trade_data(folder_path='nvdatrades'):
+    files = glob.glob(os.path.join(folder_path, '*.json'))
+    trades = []
+    
+    for f in files:
+        with open(f, 'r') as file:
+            try:
+                data = json.load(file)
+                # Note: The new bot saves receipts unconditionally if confirmed.
+                # If there's a 'status' field from an older version, we handle it.
+                if data.get('status', 'success') == 'success': 
+                    trades.append(data)
+            except json.JSONDecodeError:
+                print(f"Skipping invalid JSON: {f}")
+                
+    df = pd.DataFrame(trades)
+    
+    if df.empty:
+        raise ValueError(f"No trades found in the '{folder_path}' directory.")
+
+    # Convert timestamps and sort chronologically
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.sort_values('timestamp').reset_index(drop=True)
+    
+    return df
+
+# ==========================================
+# 2. CALCULATE STRATEGIC METRICS
+# ==========================================
+def calculate_metrics(df, config):
+    # Retrieve starting balances from BotNVDAx.json
+    start_nvdax = config.get('start_token_quantity', 0)
+    start_usdc = config.get('USDC_start_token_quantity', 0)
+
+    # Reconstruct Flows based on JS Bot receipt format 
+    # (JS saves: type, price_usdc, size_usdc)
+    
+    # NVDAx Flow:
+    # Buy: We gain (size_usdc / price_usdc) NVDAx
+    # Sell: We lose (size_usdc / price_usdc) NVDAx
+    df['nvdax_flow'] = np.where(
+        df['type'] == 'buy',
+        df['size_usdc'] / df['price_usdc'],
+        -(df['size_usdc'] / df['price_usdc'])
+    )
+    
+    # USDC Flow:
+    # Buy: We lose size_usdc
+    # Sell: We gain size_usdc
+    df['usdc_flow'] = np.where(
+        df['type'] == 'buy',
+        -df['size_usdc'],
+        df['size_usdc']
+    )
+
+    # Estimate SOL Fees (Base 5000 + Jupiter Priority 17000 = 22000 lamports)
+    ESTIMATED_FEE_SOL = 0.000022
+    df['fee_sol'] = df.get('fee_sol', ESTIMATED_FEE_SOL)
+
+    # Calculate Cumulative Totals
+    df['cumulative_fees_sol'] = df['fee_sol'].cumsum()
+    total_fees_sol = df['fee_sol'].sum()
+    
+    # Calculate Absolute Balances over time
+    df['absolute_nvdax'] = start_nvdax + df['nvdax_flow'].cumsum()
+    df['absolute_usdc'] = start_usdc + df['usdc_flow'].cumsum()
+
+    return df, total_fees_sol
+
+# ==========================================
+# 3. GENERATE STRATEGIC DASHBOARD
+# ==========================================
+def plot_dashboard(df, total_fees_sol, config):
+    sns.set_theme(style="darkgrid")
+    fig, axes = plt.subplots(3, 1, figsize=(12, 14), sharex=True)
+    fig.suptitle('NVDAx / USDC Grid Bot Strategic Dashboard', fontsize=18, weight='bold')
+
+    # --- GRAPH 1: Price Action & Executions ---
+    ax1 = axes[0]
+    sns.lineplot(data=df, x='timestamp', y='price_usdc', ax=ax1, color='gray', alpha=0.5, label='Price Trend')
+    
+    # Scatter buys (Green) and sells (Red)
+    buys = df[df['type'] == 'buy']
+    sells = df[df['type'] == 'sell']
+    ax1.scatter(buys['timestamp'], buys['price_usdc'], color='green', s=70, marker='^', label='Buy', zorder=5)
+    ax1.scatter(sells['timestamp'], sells['price_usdc'], color='red', s=70, marker='v', label='Sell', zorder=5)
+    
+    ax1.set_title('Grid Execution Accuracy (Price vs. Trades)', fontsize=14)
+    ax1.set_ylabel('NVDAx Price (USDC)')
+    ax1.legend()
+
+    # --- GRAPH 2: Cumulative Fees Paid ---
+    ax2 = axes[1]
+    sns.lineplot(data=df, x='timestamp', y='cumulative_fees_sol', ax=ax2, color='orange', linewidth=2)
+    ax2.fill_between(df['timestamp'], df['cumulative_fees_sol'], color='orange', alpha=0.2)
+    
+    ax2.set_title(f'Network Cost Drain (Estimated Total Fees: {total_fees_sol:.6f} SOL)', fontsize=14)
+    ax2.set_ylabel('Cumulative Fees (SOL)')
+
+    # --- GRAPH 3: Net Asset Flow (Inventory Management) ---
+    ax3 = axes[2]
+    # Plot NVDAx accumulation on left axis
+    sns.lineplot(data=df, x='timestamp', y='absolute_nvdax', ax=ax3, color='purple', label='Total NVDAx Balance', linewidth=2)
+    ax3.set_ylabel('NVDAx Inventory', color='purple')
+    ax3.tick_params(axis='y', labelcolor='purple')
+    
+    # Plot USDC accumulation on right axis
+    ax3_twin = ax3.twinx()
+    sns.lineplot(data=df, x='timestamp', y='absolute_usdc', ax=ax3_twin, color='teal', label='Total USDC Balance', linestyle='--', linewidth=2)
+    ax3_twin.set_ylabel('USDC Inventory', color='teal')
+    ax3_twin.tick_params(axis='y', labelcolor='teal')
+    
+    ax3.set_title('Asset Accumulation vs. Base Currency', fontsize=14)
+    ax3.set_xlabel('Time')
+    
+    # Combine legends for Graph 3
+    lines_1, labels_1 = ax3.get_legend_handles_labels()
+    lines_2, labels_2 = ax3_twin.get_legend_handles_labels()
+    ax3.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left')
+
+    plt.tight_layout(rect=[0, 0, 1, 0.97]) # Adjust for suptitle
+    plt.show()
+
+# ==========================================
+# EXECUTE
+# ==========================================
+if __name__ == "__main__":
+    try:
+        # Load State & Trades
+        bot_config = load_bot_config('BotNVDAx.json')
+        df = load_trade_data('nvdatrades') # Matches your updated TRADES_DIR
+        
+        # Calculate
+        df, total_fees_sol = calculate_metrics(df, bot_config)
+        
+        # Final Balances
+        final_nvdax = df['absolute_nvdax'].iloc[-1]
+        final_usdc = df['absolute_usdc'].iloc[-1]
+        
+        print("\n" + "="*45)
+        print("📊 NVDAx BOT PERFORMANCE SUMMARY")
+        print("="*45)
+        print(f"Total Successful Trades : {len(df)}")
+        print(f"Estimated Network Fees  : {total_fees_sol:.6f} SOL")
+        print("-" * 45)
+        print(f"Starting NVDAx          : {bot_config.get('start_token_quantity', 0):.6f}")
+        print(f"Current NVDAx           : {final_nvdax:.6f}")
+        print(f"Net NVDAx Change        : {df['nvdax_flow'].sum():+.6f}")
+        print("-" * 45)
+        print(f"Starting USDC           : {bot_config.get('USDC_start_token_quantity', 0):.2f}")
+        print(f"Current USDC            : {final_usdc:.2f}")
+        print(f"Net USDC Change         : {df['usdc_flow'].sum():+.2f}")
+        print("="*45 + "\n")
+        
+        # Render Chart
+        plot_dashboard(df, total_fees_sol, bot_config)
+        
+    except Exception as e:
+        print(f"Error executing analysis: {e}")
