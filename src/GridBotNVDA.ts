@@ -6,7 +6,8 @@ import bs58 from 'bs58';
 import * as fs from 'fs';
 import * as path from 'path';
 import 'dotenv/config';
-
+import * as dns from 'dns';
+dns.setDefaultResultOrder('ipv4first'); // Forces Node to use the working IPv4 route
 // ==========================================
 // CONFIGURATION & SETUP
 // ==========================================

@@ -38,7 +38,7 @@ const USDC_DECIMALS = 6;
 // Bot State & Locks
 const BOT_JSON_PATH = path.join(process.cwd(), 'Bot.json');
 const TRADES_DIR = path.join(process.cwd(), 'trades');
-const TRADE_SIZE_USDC = 3; 
+const TRADE_SIZE_USDC = 4; 
 let isTrading = false; // Memory Mutex
 
 // ==========================================

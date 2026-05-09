@@ -3,10 +3,10 @@
   "max_price": 230,
   "start_price": 212,
   "grid_size": 1.1,
-  "block_trade": false,
-  "last_trade_type": "buy",
-  "last_trade_price": 197.6342666967416,
-  "start_token_quantity": 0.439155479,
+  "block_trade": true,
+  "last_trade_type": "sell",
+  "last_trade_price": 212.84297659789206,
+  "start_token_quantity": 0.22,
   "USDC_start_token_quantity": 20.233638,
-  "last_tx": "2Xf4eWvrfsughmxYSLfZsySA7VhWmWFrN2uJALtJo4uDX8kwfW982hFfccGSDp3L6EcgXQ1c1bGqKbRanjddQ27u"
+  "last_tx": "2tXwM4GzLZkgRhAwwEKy9PgN478s2yhcR3WgUAh967gyHFuJhFKDozMsZVx1Xz1dzwciYoXysfxxNifKc1XWmXbn"
 }
